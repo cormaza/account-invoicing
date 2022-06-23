@@ -50,6 +50,9 @@ class StockMove(models.Model):
         product.ensure_one()
         if inv_type in ("in_invoice", "in_refund"):
             result = product.price
+            move = fields.first(self)
+            if move and move.price_unit:
+                result = move.price_unit
         else:
             # If partner given, search price in its sale pricelist
             if partner and partner.property_product_pricelist:
@@ -63,15 +66,3 @@ class StockMove(models.Model):
             else:
                 result = product.lst_price
         return result
-
-    def _prepare_extra_move_vals(self, qty):
-        """Copy invoice state for a new extra stock move"""
-        values = super()._prepare_extra_move_vals(qty)
-        values["invoice_state"] = self.invoice_state
-        return values
-
-    def _prepare_move_split_vals(self, uom_qty):
-        """Copy invoice state for a new splitted stock move"""
-        values = super()._prepare_move_split_vals(uom_qty)
-        values["invoice_state"] = self.invoice_state
-        return values

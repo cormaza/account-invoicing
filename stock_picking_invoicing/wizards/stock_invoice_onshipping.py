@@ -5,23 +5,12 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 JOURNAL_TYPE_MAP = {
-    ("outgoing", "customer"): ["sale"],
-    ("outgoing", "supplier"): ["purchase"],
-    ("outgoing", "transit"): ["sale", "purchase"],
-    ("incoming", "supplier"): ["purchase"],
-    ("incoming", "customer"): ["sale"],
-    ("incoming", "transit"): ["purchase", "sale"],
-}
-
-INVOICE_TYPE_MAP = {
-    # Picking Type Code | Local Origin Usage | Local Dest Usage
-    ("outgoing", "internal", "customer"): "out_invoice",
-    ("incoming", "customer", "internal"): "out_refund",
-    ("incoming", "supplier", "internal"): "in_invoice",
-    ("outgoing", "internal", "supplier"): "in_refund",
-    ("incoming", "transit", "internal"): "in_invoice",
-    ("outgoing", "transit", "supplier"): "in_refund",
-    ("outgoing", "transit", "customer"): "out_invoice",
+    ("outgoing", "customer"): ["out_invoice"],
+    ("outgoing", "supplier"): ["in_refund"],
+    ("outgoing", "transit"): ["out_invoice", "in_refund"],
+    ("incoming", "supplier"): ["in_invoice"],
+    ("incoming", "customer"): ["out_refund"],
+    ("incoming", "transit"): ["in_invoice", "out_refund"],
 }
 
 
@@ -30,28 +19,30 @@ class StockInvoiceOnshipping(models.TransientModel):
     _description = "Stock Invoice Onshipping"
 
     @api.model
-    def _get_journal_type(self):
+    def _get_invoice_type(self):
         active_ids = self.env.context.get("active_ids", [])
         if active_ids:
             active_ids = active_ids[0]
         pick_obj = self.env["stock.picking"]
         picking = pick_obj.browse(active_ids)
         if not picking or not picking.move_lines:
-            return "sale"
+            return "out_invoice"
         pick_type_code = picking.picking_type_id.code
         line = fields.first(picking.move_lines)
         if pick_type_code == "incoming":
             usage = line.location_id.usage
         else:
             usage = line.location_dest_id.usage
-        return JOURNAL_TYPE_MAP.get((pick_type_code, usage), ["sale"])[0]
+        return JOURNAL_TYPE_MAP.get((pick_type_code, usage), ["out_invoice"])[0]
 
-    journal_type = fields.Selection(
+    invoice_type = fields.Selection(
         selection=[
-            ("purchase", "Create Supplier Invoice"),
-            ("sale", "Create Customer Invoice"),
+            ("in_refund", "Refund Purchase"),
+            ("in_invoice", "Create Supplier Invoice"),
+            ("out_refund", "Refund Sale"),
+            ("out_invoice", "Create Customer Invoice"),
         ],
-        default=_get_journal_type,
+        default=_get_invoice_type,
         readonly=True,
     )
     group = fields.Selection(
@@ -69,20 +60,21 @@ class StockInvoiceOnshipping(models.TransientModel):
         required=True,
     )
     invoice_date = fields.Date()
-    sale_journal = fields.Many2one(
-        comodel_name="account.journal",
-        domain="[('type', '=', 'sale')]",
-        default=lambda self: self._default_journal("sale"),
-        ondelete="cascade",
+    journal_id = fields.Many2one(
+        string="Journal", comodel_name="account.journal", ondelete="cascade",
     )
-    purchase_journal = fields.Many2one(
-        comodel_name="account.journal",
-        domain="[('type', '=', 'purchase')]",
-        default=lambda self: self._default_journal("purchase"),
-        ondelete="cascade",
-    )
-    show_sale_journal = fields.Boolean()
-    show_purchase_journal = fields.Boolean()
+
+    @api.onchange("invoice_type")
+    def _onchange_invoice_type(self):
+        domain = {}
+        warning = {}
+        journal_type = "sale"
+        if self.invoice_type in ("in_invoice", "in_refund"):
+            journal_type = "purchase"
+        domain["journal_id"] = [("type", "=", journal_type)]
+        if not self.journal_id:
+            self.journal_id = self._default_journal(journal_type)
+        return {"domain": domain, "warning": warning}
 
     @api.model
     def default_get(self, fields_list):
@@ -92,7 +84,7 @@ class StockInvoiceOnshipping(models.TransientModel):
         :return: dict
         """
         result = super(StockInvoiceOnshipping, self).default_get(fields_list)
-        result.update({"invoice_date": fields.Date.today()})
+        result.update({"invoice_date": fields.Date.context_today(self)})
         return result
 
     @api.onchange("group")
@@ -233,10 +225,7 @@ class StockInvoiceOnshipping(models.TransientModel):
         if len(invoices) > 1:
             action_dict["domain"] = [("id", "in", invoices.ids)]
         elif len(invoices) == 1:
-            if inv_type in ["out_invoice", "out_refund"]:
-                form_view = [(self.env.ref("account.view_move_form").id, "form")]
-            else:
-                form_view = [(self.env.ref("account.view_move_form").id, "form")]
+            form_view = [(self.env.ref("account.view_move_form").id, "form")]
             if "views" in action_dict:
                 action_dict["views"] = form_view + [
                     (state, view) for state, view in action["views"] if view != "form"
@@ -264,34 +253,7 @@ class StockInvoiceOnshipping(models.TransientModel):
         :return: account.journal recordset
         """
         self.ensure_one()
-        journal_field = "%s_journal" % self.journal_type
-        journal = self[journal_field]
-        return journal
-
-    def _get_invoice_type(self):
-        """
-        Get the invoice type
-        :return: str
-        """
-        self.ensure_one()
-
-        active_ids = self.env.context.get("active_ids", [])
-        if active_ids:
-            active_ids = active_ids[0]
-        picking = self.env["stock.picking"].browse(active_ids)
-
-        inv_type = (
-            INVOICE_TYPE_MAP.get(
-                (
-                    picking.picking_type_code,
-                    picking.location_id.usage,
-                    picking.location_dest_id.usage,
-                )
-            )
-            or "out_invoice"
-        )
-
-        return inv_type
+        return self.journal_id
 
     @api.model
     def _get_picking_key(self, picking):
@@ -304,13 +266,7 @@ class StockInvoiceOnshipping(models.TransientModel):
         """
         key = picking
         if self.group in ["partner", "partner_product"]:
-            # Pickings with same Partner to create Invoice but the
-            # Partner to Shipping is different should not be grouping.
-            key = (
-                picking._get_partner_to_invoice(),
-                picking.picking_type_id,
-                picking.partner_id,
-            )
+            key = (picking._get_partner_to_invoice(), picking.picking_type_id)
         return key
 
     def _group_pickings(self, pickings):
@@ -350,7 +306,7 @@ class StockInvoiceOnshipping(models.TransientModel):
         picking = fields.first(pickings)
         partner_id = picking._get_partner_to_invoice()
         partner = self.env["res.partner"].browse(partner_id)
-        inv_type = self._get_invoice_type()
+        inv_type = self.invoice_type
         if inv_type in ("out_invoice", "out_refund"):
             payment_term = partner.property_payment_term_id.id
         else:
@@ -362,7 +318,7 @@ class StockInvoiceOnshipping(models.TransientModel):
             if partner.property_product_pricelist and code == "outgoing":
                 currency = partner.property_product_pricelist.currency_id
         journal = self._get_journal()
-        invoice_obj = self.env["account.move"]
+        invoice_obj = self.env["account.move"].with_context(type=inv_type)
         values = invoice_obj.default_get(invoice_obj.fields_get().keys())
         values.update(
             {
@@ -376,10 +332,12 @@ class StockInvoiceOnshipping(models.TransientModel):
                 "currency_id": currency.id,
                 "journal_id": journal.id,
                 "picking_ids": [(4, p.id, False) for p in pickings],
+                "invoice_date": self.invoice_date,
             }
         )
-
-        invoice, values = self._simulate_invoice_onchange(values)
+        invoice, values = self.with_context(type=inv_type)._simulate_invoice_onchange(
+            values
+        )
         return invoice, values
 
     def _get_move_key(self, move):
@@ -389,8 +347,16 @@ class StockInvoiceOnshipping(models.TransientModel):
         :return: key
         """
         key = move
+        if hasattr(move, "purchase_line_id"):
+            key = (move, move.purchase_line_id)
+        elif hasattr(move, "sale_line_id"):
+            key = (move, move.sale_line_id)
         if self.group == "partner_product":
             key = move.product_id
+            if hasattr(move, "purchase_line_id"):
+                key = (move.product_id, move.purchase_line_id)
+            elif hasattr(move, "sale_line_id"):
+                key = (move, move.sale_line_id)
         return key
 
     def _group_moves(self, moves):
@@ -408,7 +374,7 @@ class StockInvoiceOnshipping(models.TransientModel):
             grouped_moves.update({key: move_grouped})
         return grouped_moves.values()
 
-    def _simulate_invoice_line_onchange(self, values, price_unit=None):
+    def _simulate_invoice_line_onchange(self, values):
         """
         Simulate onchange for invoice line
         :param values: dict
@@ -417,8 +383,6 @@ class StockInvoiceOnshipping(models.TransientModel):
         line = self.env["account.move.line"].new(values.copy())
         line._onchange_product_id()
         new_values = line._convert_to_write(line._cache)
-        if price_unit:
-            new_values["price_unit"] = price_unit
         # Ensure basic values are not updated
         values.update(new_values)
         return values
@@ -482,8 +446,12 @@ class StockInvoiceOnshipping(models.TransientModel):
                 "move_id": invoice.id,
             }
         )
-        values = self._simulate_invoice_line_onchange(values, price_unit=price)
-        values.update({"name": name})
+        if hasattr(move, "purchase_line_id"):
+            values["purchase_line_id"] = move.purchase_line_id.id
+        if hasattr(move, "sale_line_id"):
+            values["sale_line_ids"] = [(6, 0, move.sale_line_id.ids)]
+        values = self._simulate_invoice_line_onchange(values)
+        values.update({"name": name, "move_id": invoice.id, "price_unit": price})
         return values
 
     def _update_picking_invoice_status(self, pickings):
@@ -495,7 +463,7 @@ class StockInvoiceOnshipping(models.TransientModel):
         return pickings._set_as_invoiced()
 
     def ungroup_moves(self, grouped_moves_list):
-        """ Ungrup your moves, split them again, grouping by
+        """Ungrup your moves, split them again, grouping by
         fiscal position, max itens per invoice and etc
         :param grouped_moves_list:
         :return: list of grouped moves list
@@ -503,7 +471,7 @@ class StockInvoiceOnshipping(models.TransientModel):
         return [grouped_moves_list]
 
     def _create_invoice(self, invoice_values):
-        """ Overrite this metothod if you need to change any values of the
+        """Overrite this metothod if you need to change any values of the
         invoice and the lines before the invoice creation
         :param invoice_values: dict with the invoice and its lines
         :return: invoice
@@ -530,7 +498,6 @@ class StockInvoiceOnshipping(models.TransientModel):
                     pickings
                 )
                 lines = [(5, 0, {})]
-                # lines = []
                 line_values = False
                 for moves in moves_list:
                     line_values = self._get_invoice_line_values(
@@ -538,15 +505,14 @@ class StockInvoiceOnshipping(models.TransientModel):
                     )
                     if line_values:
                         lines.append((0, 0, line_values))
-                if line_values:  # Only create the invoice if it has lines
+                if line_values:  # Only create the invoice if it have lines
                     invoice_values["invoice_line_ids"] = lines
+                    # prevent lost lines(account.move.line):
+                    # invoice_line_ids and line_ids are same model
+                    invoice_values.pop("line_ids", [])
                     invoice_values["invoice_date"] = self.invoice_date
-                    # this is needed otherwise invoice_line_ids are removed
-                    # in _move_autocomplete_invoice_lines_create
-                    # and no invoice line is created
-                    invoice_values.pop("line_ids")
                     invoice = self._create_invoice(invoice_values)
-                    invoice._onchange_invoice_line_ids()
-                    invoice._compute_amount()
+                    invoice.invoice_line_ids._onchange_price_subtotal()
+                    invoice._recompute_dynamic_lines(recompute_all_taxes=True)
                     invoices |= invoice
         return invoices

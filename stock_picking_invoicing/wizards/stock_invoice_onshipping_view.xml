@@ -6,18 +6,13 @@
         <field name="arch" type="xml">
             <form string="Create invoice">
                 <h1>
-                    <field name="journal_type" readonly="1" />
+                    <field name="invoice_type" readonly="1" />
                 </h1>
                 <group>
-                    <field name="show_sale_journal" invisible="1" />
-                    <field name="show_purchase_journal" invisible="1" />
                     <field
-                        name="sale_journal"
-                        attrs="{'invisible':[('show_sale_journal', '=', False)], 'required':[('show_sale_journal', '=', True)]}"
-                    />
-                    <field
-                        name="purchase_journal"
-                        attrs="{'invisible':[('show_purchase_journal', '=', False)], 'required':[('show_purchase_journal', '=', True)]}"
+                        name="journal_id"
+                        required="1"
+                        options="{'no_create': True}"
                     />
                     <field name="group" />
                     <field name="invoice_date" />
@@ -35,13 +30,12 @@
             </form>
         </field>
     </record>
-    <record id="action_stock_invoice_onshipping" model="ir.actions.act_window">
-        <field name="name">Create Draft Invoices</field>
-        <field name="type">ir.actions.act_window</field>
-        <field name="res_model">stock.invoice.onshipping</field>
-        <field name="binding_model_id" ref="stock.model_stock_picking" />
-        <field name="view_id" ref="view_stock_invoice_onshipping" />
-        <field name="binding_view_types">list,form</field>
-        <field name="target">new</field>
-    </record>
+    <act_window
+        name="Create Draft Invoices"
+        res_model="stock.invoice.onshipping"
+        binding_model="stock.picking"
+        view_mode="form"
+        target="new"
+        id="action_stock_invoice_onshipping"
+    />
 </odoo>

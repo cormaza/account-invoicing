@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <data>
+        <record id="allow_create_invoice_from_picking" model="res.groups">
+            <field name="name">Allow to create invoice from picking</field>
+            <field name="category_id" ref="base.module_category_usability" />
+        </record>
+    </data>
+</odoo>

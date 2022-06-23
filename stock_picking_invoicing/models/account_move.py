@@ -4,30 +4,21 @@
 from odoo import models
 
 
-class AccountInvoice(models.Model):
+class AccountMove(models.Model):
     _inherit = "account.move"
 
-    def button_cancel(self):
+    def button_draft(self):
         """
         Inherit to update related picking as '2binvoiced' when the invoice is
         cancelled (only for invoices, not refunds)
         :return: bool
         """
-        result = super().button_cancel()
-        pickings = self.filtered(
-            lambda i: i.picking_ids and i.type in ["out_invoice", "in_invoice"]
-        ).mapped("picking_ids")
+        result = super(AccountMove, self).button_draft()
+        pickings = self.filtered(lambda i: i.picking_ids and i.is_invoice()).mapped(
+            "picking_ids"
+        )
         self.mapped("invoice_line_ids.move_line_ids")._set_as_2binvoiced()
         pickings._set_as_2binvoiced()
-        return result
-
-    def button_draft(self):
-        result = super().button_draft()
-        pickings = self.filtered(
-            lambda i: i.picking_ids and i.type in ["out_invoice", "in_invoice"]
-        ).mapped("picking_ids")
-        self.mapped("invoice_line_ids.move_line_ids")._set_as_invoiced()
-        pickings._set_as_invoiced()
         return result
 
     def unlink(self):
@@ -36,9 +27,9 @@ class AccountInvoice(models.Model):
         (only for invoices, not refunds)
         :return:
         """
-        pickings = self.filtered(
-            lambda i: i.picking_ids and i.type in ["out_invoice", "in_invoice"]
-        ).mapped("picking_ids")
+        pickings = self.filtered(lambda i: i.picking_ids and i.is_invoice()).mapped(
+            "picking_ids"
+        )
         self.mapped("invoice_line_ids.move_line_ids")._set_as_2binvoiced()
         pickings._set_as_2binvoiced()
-        return super().unlink()
+        return super(AccountMove, self).unlink()

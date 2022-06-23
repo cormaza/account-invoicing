@@ -24,6 +24,7 @@ class StockInvoiceStateMixin(models.AbstractModel):
         "To Be Invoiced: need to be invoiced\n"
         "Not Applicable: no invoice to create",
         copy=False,
+        readonly=True,
     )
 
     def _set_as_invoiced(self):

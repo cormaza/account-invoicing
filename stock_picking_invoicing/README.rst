@@ -23,7 +23,7 @@ Stock Picking Invoicing
     :target: https://runbot.odoo-community.org/runbot/95/13.0
     :alt: Try me on Runbot
 
-|badge1| |badge2| |badge3| |badge4| |badge5| 
+|badge1| |badge2| |badge3| |badge4| |badge5|
 
 This module allows to create invoices directly from picking, without having to
 use sale or purchase orders.
@@ -53,6 +53,7 @@ To use this module, you need to:
 If an invoice (not refund) is cancelled or deleted, invoice status of related picking is automatically
 updated to "To be invoiced".
 
+
 Changelog
 =========
 
@@ -67,6 +68,12 @@ Changelog
 
  * Included dependency from module stock_picking_invoice_link
    from repository https://github.com/OCA/stock-logistics-workflow.git.
+
+
+13.0.1.0.0 (2020-09-23)
+~~~~~~~~~~~~~~~~~~~~~~~
+
+ * Migration to version 13.0 .
 
 Bug Tracker
 ===========
@@ -97,7 +104,7 @@ Contributors
 * François Honoré <francois.honore@acsone.eu>
 * Magno Costa <magno.costa@akretion.com.br>
 * Luis Felipe Mileo <mileo@kmee.com.br>
-* Radovan Skolnik <radovan@skolnik.info>
+* Carlos Lopez Mite <celm1990@gmail.com>
 
 Maintainers
 ~~~~~~~~~~~

@@ -27,6 +27,22 @@ class StockPicking(models.Model):
         self.mapped("move_lines")._set_as_2binvoiced()
         return super(StockPicking, self)._set_as_2binvoiced()
 
+    def set_as_not_billable(self):
+        """
+        Update invoice_state of current pickings to "none".
+        :return: dict
+        """
+        self._set_as_not_billable()
+        return {}
+
+    def _set_as_not_billable(self):
+        """
+        Inherit to also update related moves.
+        :return: bool
+        """
+        self.mapped("move_lines")._set_as_not_billable()
+        return super(StockPicking, self)._set_as_not_billable()
+
     def _set_as_invoiced(self):
         """
         Inherit to also update related moves.
@@ -39,9 +55,3 @@ class StockPicking(models.Model):
         self.ensure_one()
         partner = self.partner_id
         return partner.address_get(["invoice"]).get("invoice")
-
-    def action_assign(self):
-        """If any stock move is to be invoiced, picking status is updated"""
-        if any(m.invoice_state == "2binvoiced" for m in self.mapped("move_lines")):
-            self.write({"invoice_state": "2binvoiced"})
-        return super().action_assign()

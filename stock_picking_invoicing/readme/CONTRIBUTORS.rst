@@ -6,4 +6,4 @@
 * François Honoré <francois.honore@acsone.eu>
 * Magno Costa <magno.costa@akretion.com.br>
 * Luis Felipe Mileo <mileo@kmee.com.br>
-* Radovan Skolnik <radovan@skolnik.info>
+* Carlos Lopez Mite <celm1990@gmail.com>
